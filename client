@@ -1,0 +1,114 @@
+#include <unistd.h>
+#include <stdio.h>
+#include <string.h>
+#include <stdlib.h>
+#include <sys/types.h>
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <netdb.h> 
+#include <iostream>
+#include <vector>
+#include <sstream>
+#include <algorithm>
+#include <map>
+
+
+struct symbolInfo{
+    int portno;
+    std::string symb;
+    double probx;
+    double fx;
+    std::string binary;
+};
+
+// child thread function
+void *child(void *ptr){
+    int sockfd, portno, n;
+    struct sockaddr_in serv_addr;
+    struct hostent *server;
+    symbolInfo* structPtr = (symbolInfo *)ptr;
+    portno = structPtr->portno;
+
+    if ((sockfd = socket(AF_INET, SOCK_STREAM, 0)) < 0) {
+        std::cout << "ERROR opening socket\n";
+    }
+
+    serv_addr.sin_family = AF_INET;
+    serv_addr.sin_port = htons(portno);
+
+    if (connect(sockfd,(struct sockaddr *)&serv_addr, sizeof(serv_addr)) < 0) {
+        std::cout << "ERROR connecting\n";
+    }
+    
+    double probability = structPtr->probx;
+    double fx = structPtr->fx;
+
+    n = write(sockfd, &probability, sizeof(double));
+    if (n < 0) {
+        std::cout << "ERROR writing to socket\n";
+    }
+    n = write(sockfd, &fx, sizeof(double));
+    if (n < 0) {
+        std::cout << "ERROR writing to socket\n";
+    }
+    int size;
+    n = read(sockfd, &size, sizeof(int));
+    if (n < 0) {
+        std::cout << "ERROR reading from socket\n";
+    }
+    char *buffer = new char[size + 1];
+    n = read(sockfd, buffer, size);
+    structPtr->binary = buffer;
+    delete [] buffer;
+    close(sockfd);
+    return 0;
+}
+
+
+int main(int argc, char *argv[]) {
+
+    std::vector <symbolInfo> vec;
+    struct symbolInfo info;
+    std::vector <std::string> symbolInput;
+    std::string symbols;
+    getline(std::cin, symbols);
+    double probs;
+    std::string letter;
+    double fx;
+
+    int portno = atoi(argv[2]);
+    info.portno = portno;
+    
+    std::map<const char,int> map;
+    for(auto i:symbols){
+        map[i]++;
+    }
+    
+    for (auto it = map.begin(); it != map.end(); it++) {
+        info.symb = it->first;
+        probs = it->second; 
+        probs = probs / symbols.length();
+        info.probx = probs;
+        fx += info.probx;
+        info.fx = fx;
+        vec.push_back(info);
+        
+    }
+    int m = vec.size();
+    pthread_t tid[m];
+    for(int n = 0; n < vec.size(); n++) {
+        pthread_create(&tid[n], nullptr, &child, (void*)&vec[n]);
+    }
+    for (int i = 0; i < vec.size(); i++){
+       pthread_join(tid[i], nullptr);
+    }
+    
+    std::cout << "SHANNON-FANO-ELIAS Codes:\n\n";
+    for(int j = 0; j < vec.size(); j++){
+        std::cout << "Symbol " << vec[j].symb << ", Code: " << vec[j].binary << std::endl;
+    }
+ 
+    return 0;        
+}
+
+
